@@ -27,7 +27,7 @@ client_scripts {
 
 --- ## Fichiers de Langue ##
 files {
-    'locales/*.lua' -- Langues (exemple pour les fichiers multi-langues)
+    'locales/en.lua' -- Langues (exemple pour les fichiers multi-langues)
 }
 
 --- ## Configuration Partagée ##
@@ -43,8 +43,8 @@ files {
     'html/index.html',          -- Fichier principal de l'UI
     'html/css/style.css',       -- Style CSS
     'html/js/script.js',        -- JavaScript pour l'UI
-    'html/img/*.png',           -- Images utilisées dans l'UI
-    'html/fonts/*.ttf'          -- Polices pour l'interface utilisateur
+    --'html/img/*.png',           -- Images utilisées dans l'UI
+    --'html/fonts/*.ttf'          -- Polices pour l'interface utilisateur
 }
 
 lua54 'yes' -- Activer le mode Lua 5.4 (si applicable)
