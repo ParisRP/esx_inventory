@@ -1,41 +1,50 @@
 fx_version 'cerulean'
 game 'gta5'
 
-author 'paris rp'
-description 'Realistic ESX Legacy Inventory System with OxLib'
-version '1.0.0'
+author 'ParisRP'
+description 'Inventory System with ox_lib for ESX Legacy'
+version '1.2.0'
 
--- Specify the server scripts
+--- ## Dépendances ##
+dependencies {
+    'es_extended', -- ESX Framework
+    'ox_lib'       -- Utility Library
+}
+
+--- ## Scripts Serveur ##
 server_scripts {
-    '@ox_lib/init.lua', -- Include OxLib initialization
-    'server.lua', -- Server-side logic for inventory management
+    '@es_extended/locale.lua',    -- Langues de ESX
+    '@ox_lib/init.lua',           -- Initialisation de ox_lib
+    'server/server.lua'           -- Script serveur
 }
 
--- Specify the client scripts
+--- ## Scripts Client ##
 client_scripts {
-    '@ox_lib/init.lua', -- Include OxLib initialization
-    'client.lua', -- Client-side logic for inventory management
+    '@es_extended/locale.lua',    -- Langues de ESX
+    '@ox_lib/init.lua',           -- Initialisation de ox_lib
+    'client/client.lua'           -- Script client
 }
 
--- Define UI files (if any)
-ui_page 'html/index.html'
+--- ## Fichiers de Langue ##
+files {
+    'locales/*.lua' -- Langues (exemple pour les fichiers multi-langues)
+}
+
+--- ## Configuration Partagée ##
+shared_script {
+    '@ox_lib/init.lua', -- Initialisation de ox_lib pour les scripts partagés
+    'config.lua'        -- Configuration partagée pour client et serveur
+}
+
+--- ## UI et Assets ##
+ui_page 'html/index.html' -- Si une interface utilisateur HTML est incluse
 
 files {
-    'html/index.html',
-    'html/styles.css',
-    'html/scripts.js',
-    'html/img/*' -- Include any images used for the UI
+    'html/index.html',          -- Fichier principal de l'UI
+    'html/css/style.css',       -- Style CSS
+    'html/js/script.js',        -- JavaScript pour l'UI
+    'html/img/*.png',           -- Images utilisées dans l'UI
+    'html/fonts/*.ttf'          -- Polices pour l'interface utilisateur
 }
 
--- Dependencies
-dependencies {
-    'esx_core', 
-    'ox_lib' -- Include OxLib as a dependency
-}
-
--- This will allow the resource to be loaded by ESX framework
-escrow_ignore {
-    'html',
-    'client.lua',
-    'server.lua'
-}
+lua54 'yes' -- Activer le mode Lua 5.4 (si applicable)
