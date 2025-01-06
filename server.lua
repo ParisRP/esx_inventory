@@ -1,143 +1,154 @@
 ESX = nil
-local weightLimit = 50.0  -- Default weight limit for inventory (can be customized)
 
 TriggerEvent('esx:getSharedObject', function(obj) ESX = obj end)
 
--- Callback to get the player's inventory
-ESX.RegisterServerCallback('esx_inventory:getInventory', function(source, cb)
+--- ## 1. Callbacks ##
+-- Chargement des données d'inventaire du joueur
+ESX.RegisterServerCallback('esx_inventory:getPlayerInventory', function(source, cb)
     local xPlayer = ESX.GetPlayerFromId(source)
-    local inventory = {}
-
-    for i=1, #xPlayer.inventory, 1 do
-        table.insert(inventory, {
-            item = xPlayer.inventory[i].name,
-            count = xPlayer.inventory[i].count,
-            weight = xPlayer.inventory[i].weight
-        })
+    if not xPlayer then
+        cb(nil)
+        return
     end
 
-    cb(inventory)
-end)
+    local identifier = xPlayer.identifier
+    local inventory = MySQL.scalar.await('SELECT inventory FROM users WHERE identifier = ?', { identifier })
 
--- Callback to get the total weight of the inventory
-ESX.RegisterServerCallback('esx_inventory:getTotalInventoryWeight', function(source, cb)
-    local xPlayer = ESX.GetPlayerFromId(source)
-    local totalWeight = 0.0
-
-    for i=1, #xPlayer.inventory, 1 do
-        local itemWeight = xPlayer.inventory[i].weight * xPlayer.inventory[i].count
-        totalWeight = totalWeight + itemWeight
-    end
-
-    cb(totalWeight)
-end)
-
--- Callback to get the player's weight limit (can be customized)
-ESX.RegisterServerCallback('esx_inventory:getPlayerWeightLimit', function(source, cb)
-    -- This can be customized to return a different limit per player (e.g., based on their job, rank, etc.)
-    cb(weightLimit)
-end)
-
--- Event to add an item to the inventory
-RegisterServerEvent('esx_inventory:addItem')
-AddEventHandler('esx_inventory:addItem', function(item, count, weight)
-    local xPlayer = ESX.GetPlayerFromId(source)
-
-    if item and count and weight then
-        local existingItem = xPlayer.getInventoryItem(item)
-
-        if existingItem then
-            -- Add the item to the player's inventory
-            xPlayer.addInventoryItem(item, count)
-
-            -- Notify the player
-            TriggerClientEvent('esx_inventory:notify', source, "You have added " .. count .. " " .. item .. "(s).")
-        else
-            TriggerClientEvent('esx_inventory:notify', source, "Error: Item not found.")
-        end
+    if inventory then
+        cb(json.decode(inventory)) -- Retourne l'inventaire décodé
     else
-        TriggerClientEvent('esx_inventory:notify', source, "Error: Invalid parameters.")
+        cb({})
     end
 end)
 
--- Event to remove an item from the inventory
-RegisterServerEvent('esx_inventory:removeItem')
+-- Vérification de la possession d'un objet spécifique
+ESX.RegisterServerCallback('esx_inventory:hasItem', function(source, cb, item, count)
+    local xPlayer = ESX.GetPlayerFromId(source)
+    if not xPlayer then
+        cb(false)
+        return
+    end
+
+    local identifier = xPlayer.identifier
+    local inventory = MySQL.scalar.await('SELECT inventory FROM users WHERE identifier = ?', { identifier })
+
+    if not inventory then
+        cb(false)
+    else
+        inventory = json.decode(inventory)
+        if inventory[item] and inventory[item] >= count then
+            cb(true)
+        else
+            cb(false)
+        end
+    end
+end)
+
+--- ## 2. Gestion des Objets ##
+-- Ajouter un objet à l'inventaire
+RegisterNetEvent('esx_inventory:addItem')
+AddEventHandler('esx_inventory:addItem', function(item, count)
+    local xPlayer = ESX.GetPlayerFromId(source)
+    if not xPlayer then return end
+
+    local identifier = xPlayer.identifier
+    local inventory = MySQL.scalar.await('SELECT inventory FROM users WHERE identifier = ?', { identifier })
+
+    if not inventory then
+        inventory = {}
+    else
+        inventory = json.decode(inventory)
+    end
+
+    if inventory[item] then
+        inventory[item] = inventory[item] + count
+    else
+        inventory[item] = count
+    end
+
+    MySQL.update('UPDATE users SET inventory = ? WHERE identifier = ?', { json.encode(inventory), identifier })
+    TriggerClientEvent('esx:showNotification', source, 'Vous avez reçu ~g~' .. count .. ' ' .. item)
+end)
+
+-- Retirer un objet de l'inventaire
+RegisterNetEvent('esx_inventory:removeItem')
 AddEventHandler('esx_inventory:removeItem', function(item, count)
     local xPlayer = ESX.GetPlayerFromId(source)
+    if not xPlayer then return end
 
-    if item and count then
-        local existingItem = xPlayer.getInventoryItem(item)
+    local identifier = xPlayer.identifier
+    local inventory = MySQL.scalar.await('SELECT inventory FROM users WHERE identifier = ?', { identifier })
 
-        if existingItem and existingItem.count >= count then
-            -- Remove the item from the player's inventory
-            xPlayer.removeInventoryItem(item, count)
-
-            -- Notify the player
-            TriggerClientEvent('esx_inventory:notify', source, "You have removed " .. count .. " " .. item .. "(s).")
-        else
-            TriggerClientEvent('esx_inventory:notify', source, "Error: Insufficient items or invalid item.")
-        end
+    if not inventory then
+        inventory = {}
     else
-        TriggerClientEvent('esx_inventory:notify', source, "Error: Invalid parameters.")
+        inventory = json.decode(inventory)
+    end
+
+    if inventory[item] and inventory[item] >= count then
+        inventory[item] = inventory[item] - count
+
+        if inventory[item] <= 0 then
+            inventory[item] = nil
+        end
+
+        MySQL.update('UPDATE users SET inventory = ? WHERE identifier = ?', { json.encode(inventory), identifier })
+        TriggerClientEvent('esx:showNotification', source, 'Vous avez utilisé ~r~' .. count .. ' ' .. item)
+    else
+        TriggerClientEvent('esx:showNotification', source, '~r~Vous n\'avez pas assez de ' .. item)
     end
 end)
 
--- Event to sell an item
-RegisterServerEvent('esx_inventory:sellItem')
-AddEventHandler('esx_inventory:sellItem', function(item, count)
+--- ## 3. Transfert d'Objets ##
+-- Transférer un objet à un autre joueur
+RegisterNetEvent('esx_inventory:transferItem')
+AddEventHandler('esx_inventory:transferItem', function(targetId, item, count)
     local xPlayer = ESX.GetPlayerFromId(source)
-    local itemPrice = getItemPrice(item)
+    local targetPlayer = ESX.GetPlayerFromId(targetId)
 
-    if item and count then
-        local existingItem = xPlayer.getInventoryItem(item)
+    if not xPlayer or not targetPlayer then
+        TriggerClientEvent('esx:showNotification', source, '~r~Joueur introuvable.')
+        return
+    end
 
-        if existingItem and existingItem.count >= count then
-            -- Remove the item and give money
-            xPlayer.removeInventoryItem(item, count)
-            xPlayer.addMoney(itemPrice * count)
+    local identifier = xPlayer.identifier
+    local targetIdentifier = targetPlayer.identifier
 
-            -- Notify the player
-            TriggerClientEvent('esx_inventory:notify', source, "You sold " .. count .. " " .. item .. "(s) for $" .. (itemPrice * count) .. ".")
-        else
-            TriggerClientEvent('esx_inventory:notify', source, "Error: Insufficient items.")
-        end
+    local inventory = MySQL.scalar.await('SELECT inventory FROM users WHERE identifier = ?', { identifier })
+    local targetInventory = MySQL.scalar.await('SELECT inventory FROM users WHERE identifier = ?', { targetIdentifier })
+
+    if not inventory then
+        inventory = {}
     else
-        TriggerClientEvent('esx_inventory:notify', source, "Error: Invalid parameters.")
+        inventory = json.decode(inventory)
+    end
+
+    if not targetInventory then
+        targetInventory = {}
+    else
+        targetInventory = json.decode(targetInventory)
+    end
+
+    if inventory[item] and inventory[item] >= count then
+        -- Retirer de l'expéditeur
+        inventory[item] = inventory[item] - count
+        if inventory[item] <= 0 then
+            inventory[item] = nil
+        end
+
+        -- Ajouter au destinataire
+        if targetInventory[item] then
+            targetInventory[item] = targetInventory[item] + count
+        else
+            targetInventory[item] = count
+        end
+
+        MySQL.update('UPDATE users SET inventory = ? WHERE identifier = ?', { json.encode(inventory), identifier })
+        MySQL.update('UPDATE users SET inventory = ? WHERE identifier = ?', { json.encode(targetInventory), targetIdentifier })
+
+        TriggerClientEvent('esx:showNotification', source, 'Vous avez donné ~g~' .. count .. ' ' .. item)
+        TriggerClientEvent('esx:showNotification', targetId, 'Vous avez reçu ~g~' .. count .. ' ' .. item)
+    else
+        TriggerClientEvent('esx:showNotification', source, '~r~Vous n\'avez pas assez de ' .. item)
     end
 end)
-
--- Event to buy an item
-RegisterServerEvent('esx_inventory:buyItem')
-AddEventHandler('esx_inventory:buyItem', function(item, count)
-    local xPlayer = ESX.GetPlayerFromId(source)
-    local itemPrice = getItemPrice(item)
-
-    if item and count then
-        local totalCost = itemPrice * count
-
-        if xPlayer.getMoney() >= totalCost then
-            -- Deduct money and add the item
-            xPlayer.removeMoney(totalCost)
-            xPlayer.addInventoryItem(item, count)
-
-            -- Notify the player
-            TriggerClientEvent('esx_inventory:notify', source, "You bought " .. count .. " " .. item .. "(s) for $" .. totalCost .. ".")
-        else
-            TriggerClientEvent('esx_inventory:notify', source, "Error: Not enough money.")
-        end
-    else
-        TriggerClientEvent('esx_inventory:notify', source, "Error: Invalid parameters.")
-    end
-end)
-
--- Function to get the price of an item (can be customized)
-function getItemPrice(item)
-    local prices = {
-        apple = 5,
-        bread = 10,
-        water = 2,
-        -- Add more items and their prices here
-    }
-
-    return prices[item] or 0  -- Return 0 if the item is not in the prices table
-end
