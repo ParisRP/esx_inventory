@@ -27,7 +27,7 @@ client_scripts {
 
 --- ## Fichiers de Langue ##
 files {
-    'locales/en.lua' -- Langues (exemple pour les fichiers multi-langues)
+    'locales/fr.lua' -- Langues (exemple pour les fichiers multi-langues)
 }
 
 --- ## Configuration Partagée ##
