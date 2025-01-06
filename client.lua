@@ -1,158 +1,108 @@
-ESX = nil
+local playerInventory = {}
 
-TriggerEvent('esx:getSharedObject', function(obj) ESX = obj end)
-
--- Function to display items in the inventory
-function showInventory()
-    ESX.TriggerServerCallback('esx_inventory:getInventory', function(inventory)
-        local inventoryList = ''
-        for i=1, #inventory, 1 do
-            inventoryList = inventoryList .. inventory[i].item .. " - " .. inventory[i].count .. " (Weight: " .. inventory[i].weight .. ")\n"
-        end
-
-        if inventoryList == '' then
-            ESX.ShowNotification("Your inventory is empty.")
+--- ## 1. Gestion de l'Inventaire ##
+-- Ouvrir l'inventaire
+RegisterNetEvent('esx_inventory:openInventory')
+AddEventHandler('esx_inventory:openInventory', function()
+    ESX.TriggerServerCallback('esx_inventory:getPlayerInventory', function(inventory)
+        if inventory then
+            playerInventory = inventory
+            -- Exemple : Affiche l'inventaire dans un menu interactif
+            OpenInventoryMenu(playerInventory)
         else
-            ESX.ShowNotification("Inventory:\n" .. inventoryList)
+            ESX.ShowNotification('~r~Votre inventaire est vide.')
         end
+    end)
+end)
+
+-- Utiliser un objet
+RegisterNetEvent('esx_inventory:useItem')
+AddEventHandler('esx_inventory:useItem', function(item)
+    if playerInventory[item] and playerInventory[item] > 0 then
+        TriggerServerEvent('esx_inventory:removeItem', item, 1)
+        ESX.ShowNotification('Vous avez utilisé ~g~1 ' .. item)
+        -- Ajoutez ici une action spécifique pour l'objet (par exemple : consommer une nourriture, utiliser une clé, etc.)
+    else
+        ESX.ShowNotification('~r~Vous ne possédez pas cet objet.')
+    end
+end)
+
+--- ## 2. Gestion des Transferts ##
+-- Donner un objet à un autre joueur
+RegisterNetEvent('esx_inventory:giveItem')
+AddEventHandler('esx_inventory:giveItem', function(targetId, item, count)
+    if playerInventory[item] and playerInventory[item] >= count then
+        TriggerServerEvent('esx_inventory:transferItem', targetId, item, count)
+        ESX.ShowNotification('Vous avez donné ~g~' .. count .. ' ' .. item)
+    else
+        ESX.ShowNotification('~r~Vous n\'avez pas assez de ' .. item)
+    end
+end)
+
+--- ## 3. Affichage du Menu d'Inventaire ##
+function OpenInventoryMenu(inventory)
+    local elements = {}
+
+    for item, count in pairs(inventory) do
+        table.insert(elements, {
+            label = item .. ' x' .. count,
+            value = item
+        })
+    end
+
+    ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'inventory_menu', {
+        title    = 'Inventaire',
+        align    = 'top-left',
+        elements = elements
+    }, function(data, menu)
+        local item = data.current.value
+        ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'inventory_item_menu', {
+            title    = 'Options pour ' .. item,
+            align    = 'top-left',
+            elements = {
+                { label = 'Utiliser', value = 'use' },
+                { label = 'Donner', value = 'give' }
+            }
+        }, function(optionData, optionMenu)
+            if optionData.current.value == 'use' then
+                TriggerEvent('esx_inventory:useItem', item)
+                menu.close()
+            elseif optionData.current.value == 'give' then
+                ESX.UI.Menu.Open('dialog', GetCurrentResourceName(), 'give_item_count', {
+                    title = 'Quantité'
+                }, function(dialogData, dialogMenu)
+                    local count = tonumber(dialogData.value)
+                    if count and count > 0 then
+                        local closestPlayer, closestDistance = ESX.Game.GetClosestPlayer()
+                        if closestPlayer ~= -1 and closestDistance <= 3.0 then
+                            TriggerEvent('esx_inventory:giveItem', GetPlayerServerId(closestPlayer), item, count)
+                            dialogMenu.close()
+                            menu.close()
+                        else
+                            ESX.ShowNotification('~r~Aucun joueur à proximité.')
+                        end
+                    else
+                        ESX.ShowNotification('~r~Quantité invalide.')
+                    end
+                end, function(_, dialogMenu)
+                    dialogMenu.close()
+                end)
+            end
+        end, function(_, menu)
+            menu.close()
+        end)
+    end, function(_, menu)
+        menu.close()
     end)
 end
 
--- Command to show the inventory
-RegisterCommand('showInventory', function()
-    showInventory()
-end, false)
-
--- Function to add an item to the inventory
-function addItemToInventory(item, count, weight)
-    if item and count and weight then
-        TriggerServerEvent('esx_inventory:addItem', item, count, weight)
-    else
-        ESX.ShowNotification("Error: Invalid parameters.")
-    end
-end
-
--- Command to add an item
-RegisterCommand('addItem', function(source, args, rawCommand)
-    local item = args[1]
-    local count = tonumber(args[2])
-    local weight = tonumber(args[3])
-
-    if item and count and weight then
-        addItemToInventory(item, count, weight)
-    else
-        ESX.ShowNotification("Error: Invalid parameters.")
-    end
-end, false)
-
--- Function to remove an item from the inventory
-function removeItemFromInventory(item, count)
-    if item and count then
-        TriggerServerEvent('esx_inventory:removeItem', item, count)
-    else
-        ESX.ShowNotification("Error: Invalid parameters.")
-    end
-end
-
--- Command to remove an item
-RegisterCommand('removeItem', function(source, args, rawCommand)
-    local item = args[1]
-    local count = tonumber(args[2])
-
-    if item and count then
-        removeItemFromInventory(item, count)
-    else
-        ESX.ShowNotification("Error: Invalid parameters.")
-    end
-end, false)
-
--- Notification to inform the player
-RegisterNetEvent('esx_inventory:notify')
-AddEventHandler('esx_inventory:notify', function(message)
-    ESX.ShowNotification(message)
-end)
-
--- Function to manage adding items via an interactive menu
+--- ## 4. Initialisation et Raccourcis ##
+-- Ouvrir l'inventaire via une touche (par défaut : F2)
 Citizen.CreateThread(function()
     while true do
         Citizen.Wait(0)
-
-        -- Example of adding an item via a key press event
-        if IsControlJustPressed(0, 38) then  -- E key (by default) for interaction
-            local playerPed = PlayerPedId()
-            local coords = GetEntityCoords(playerPed)
-
-            -- Simulate adding an item (here an apple with weight 0.5 and quantity 1)
-            addItemToInventory("apple", 1, 0.5)
+        if IsControlJustPressed(0, 289) then -- F2 par défaut
+            TriggerEvent('esx_inventory:openInventory')
         end
     end
 end)
-
--- Function to update inventory weight
-RegisterNetEvent('esx_inventory:updateWeight')
-AddEventHandler('esx_inventory:updateWeight', function(newWeight)
-    ESX.ShowNotification("Current inventory weight: " .. newWeight .. " / " .. weightLimit .. " kg")
-end)
-
--- Check the inventory weight and display
-function checkInventoryWeight()
-    ESX.TriggerServerCallback('esx_inventory:getTotalInventoryWeight', function(currentWeight)
-        getPlayerWeightLimit(function(weightLimit)
-            if currentWeight > weightLimit then
-                ESX.ShowNotification("Warning! You have exceeded the weight limit!")
-            else
-                ESX.ShowNotification("Current inventory weight: " .. currentWeight .. " kg / " .. weightLimit .. " kg")
-            end
-        end)
-    end)
-end
-
--- Show the total weight of the inventory with a command
-RegisterCommand('checkWeight', function()
-    checkInventoryWeight()
-end, false)
-
--- Get the player's weight limit
-function getPlayerWeightLimit(cb)
-    ESX.TriggerServerCallback('esx_inventory:getPlayerWeightLimit', function(limit)
-        cb(limit)
-    end)
-end
-
--- Command to simulate a selling transaction
-RegisterCommand('sellItem', function(source, args, rawCommand)
-    local item = args[1]
-    local count = tonumber(args[2])
-
-    if item and count then
-        -- This command is an example of simulating a transaction
-        ESX.TriggerServerCallback('esx_inventory:sellItem', function(success)
-            if success then
-                ESX.ShowNotification("You sold " .. count .. " " .. item .. "(s).")
-            else
-                ESX.ShowNotification("Error: Could not sell this item.")
-            end
-        end, item, count)
-    else
-        ESX.ShowNotification("Error: Invalid parameters.")
-    end
-end, false)
-
--- Command to simulate a purchase transaction
-RegisterCommand('buyItem', function(source, args, rawCommand)
-    local item = args[1]
-    local count = tonumber(args[2])
-
-    if item and count then
-        -- This command is an example of simulating a purchase
-        ESX.TriggerServerCallback('esx_inventory:buyItem', function(success)
-            if success then
-                ESX.ShowNotification("You bought " .. count .. " " .. item .. "(s).")
-            else
-                ESX.ShowNotification("Error: Could not buy this item.")
-            end
-        end, item, count)
-    else
-        ESX.ShowNotification("Error: Invalid parameters.")
-    end
-end, false)
