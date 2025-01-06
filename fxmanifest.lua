@@ -2,19 +2,21 @@ fx_version 'cerulean'
 game 'gta5'
 
 author 'ParisRP'
-description 'Inventory System with ox_lib for ESX Legacy'
-version '1.2.0'
+description 'Inventory System with ox_lib and oxmysql for ESX Legacy'
+version '1.3.0'
 
 --- ## Dépendances ##
 dependencies {
     'es_extended', -- ESX Framework
-    'ox_lib'       -- Utility Library
+    'ox_lib',       -- Utility Library
+    'oxmysql'       -- MySQL Database Handling (For ESX Legacy)
 }
 
 --- ## Scripts Serveur ##
 server_scripts {
     '@es_extended/locale.lua',    -- Langues de ESX
     '@ox_lib/init.lua',           -- Initialisation de ox_lib
+    '@oxmysql/lib/MySQL.lua',     -- Initialisation d'oxmysql
     'server/server.lua'           -- Script serveur
 }
 
